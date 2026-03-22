@@ -115,34 +115,93 @@ function getFileType(filename) {
     return FILE_TYPES.other;
 }
 
+// Toast notification system
+function showToast(message, type = 'error') {
+    const existing = document.querySelector('.toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            ${type === 'error' 
+                ? '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>'
+                : type === 'success'
+                ? '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'
+                : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+            }
+        </svg>
+        <span>${message}</span>
+    `;
+    document.body.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add('visible'));
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
 // Authentication functions
 function checkDOB() {
-    const input = document.getElementById('dob').value.toLowerCase();
+    const input = document.getElementById('dob').value.trim().toLowerCase();
+    const errorEl = document.getElementById('error1');
+    if (!input) {
+        errorEl.textContent = 'Please enter your date of birth';
+        showToast('Please enter your date of birth');
+        shakeInput('dob');
+        return;
+    }
     if (input === AUTH.dob.toLowerCase()) {
+        errorEl.textContent = '';
+        showToast('Date of birth verified', 'success');
         showStep('step2');
+        setTimeout(() => document.getElementById('authCode').focus(), 300);
     } else {
-        document.getElementById('error1').textContent = 'Incorrect date of birth';
+        errorEl.textContent = 'Incorrect date of birth';
+        showToast('Incorrect date of birth');
         shakeInput('dob');
     }
 }
 
 function checkAuthCode() {
-    const input = document.getElementById('authCode').value;
+    const input = document.getElementById('authCode').value.trim();
+    const errorEl = document.getElementById('error2');
+    if (!input) {
+        errorEl.textContent = 'Please enter the authorization code';
+        showToast('Please enter the authorization code');
+        shakeInput('authCode');
+        return;
+    }
     if (input === AUTH.authCode) {
+        errorEl.textContent = '';
+        showToast('Authorization code accepted', 'success');
         showStep('step3');
+        setTimeout(() => document.getElementById('twoFA').focus(), 300);
     } else {
-        document.getElementById('error2').textContent = 'Incorrect authorization code';
+        errorEl.textContent = 'Incorrect authorization code';
+        showToast('Incorrect authorization code');
         shakeInput('authCode');
     }
 }
 
 function check2FA() {
-    const input = document.getElementById('twoFA').value;
+    const input = document.getElementById('twoFA').value.trim();
+    const errorEl = document.getElementById('error3');
+    if (!input) {
+        errorEl.textContent = 'Please enter the 2FA code';
+        showToast('Please enter the 2FA code');
+        shakeInput('twoFA');
+        return;
+    }
     if (input === AUTH.twoFA) {
+        errorEl.textContent = '';
+        showToast('Authentication successful!', 'success');
         showStep('mainApp');
         initializeApp();
     } else {
-        document.getElementById('error3').textContent = 'Incorrect 2FA code';
+        errorEl.textContent = 'Incorrect 2FA code';
+        showToast('Incorrect 2FA code');
         shakeInput('twoFA');
     }
 }
@@ -160,9 +219,23 @@ function showStep(stepId) {
     document.getElementById(stepId).classList.add('active');
 }
 
+// Enter key support for auth inputs
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('dob').addEventListener('keydown', e => {
+        if (e.key === 'Enter') checkDOB();
+    });
+    document.getElementById('authCode').addEventListener('keydown', e => {
+        if (e.key === 'Enter') checkAuthCode();
+    });
+    document.getElementById('twoFA').addEventListener('keydown', e => {
+        if (e.key === 'Enter') check2FA();
+    });
+});
+
 // Main app functionality
 let storage = JSON.parse(localStorage.getItem('immutableStorage') || '[]');
 let currentFilter = 'all';
+let pendingDeleteIndex = null;
 
 function initializeApp() {
     const fileInput = document.getElementById('fileInput');
@@ -170,7 +243,6 @@ function initializeApp() {
     
     fileInput.addEventListener('change', handleFiles);
     
-    // Drag and drop
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
@@ -187,7 +259,6 @@ function initializeApp() {
         handleFilesList(files);
     });
     
-    // Enter key for text
     document.getElementById('textInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && e.ctrlKey) {
             addText();
@@ -229,6 +300,7 @@ function addText() {
             timestamp: new Date().toISOString()
         });
         textarea.value = '';
+        showToast('Text entry added', 'success');
     }
 }
 
@@ -237,6 +309,35 @@ function addItem(item) {
     localStorage.setItem('immutableStorage', JSON.stringify(storage));
     renderStorage();
     updateStats();
+}
+
+// Delete functionality
+function requestDelete(storageIndex) {
+    pendingDeleteIndex = storageIndex;
+    const item = storage[storageIndex];
+    const name = item.type === 'text' ? 'this text entry' : `"${item.name}"`;
+    
+    document.getElementById('deleteItemName').textContent = name;
+    document.getElementById('deleteModal').classList.add('visible');
+}
+
+function confirmDelete() {
+    if (pendingDeleteIndex !== null) {
+        const item = storage[pendingDeleteIndex];
+        const label = item.type === 'text' ? 'Text entry' : item.name;
+        storage.splice(pendingDeleteIndex, 1);
+        localStorage.setItem('immutableStorage', JSON.stringify(storage));
+        renderStorage();
+        updateStats();
+        showToast(`${label} deleted`, 'success');
+        pendingDeleteIndex = null;
+    }
+    closeDeleteModal();
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteModal').classList.remove('visible');
+    pendingDeleteIndex = null;
 }
 
 function filterItems(filter) {
@@ -296,7 +397,8 @@ function renderStorage() {
     
     emptyState.classList.remove('visible');
     
-    container.innerHTML = filteredItems.map((item, index) => {
+    container.innerHTML = filteredItems.map((item) => {
+        const realIndex = storage.indexOf(item);
         if (item.type === 'text') {
             return `
                 <div class="item" data-type="text">
@@ -311,6 +413,12 @@ function renderStorage() {
                                 <span>${formatDate(item.timestamp)}</span>
                             </div>
                         </div>
+                        <button class="btn-delete" onclick="requestDelete(${realIndex})" title="Delete">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </button>
                     </div>
                     <div class="item-content">${escapeHtml(item.content)}</div>
                 </div>
@@ -331,6 +439,12 @@ function renderStorage() {
                                 <span>${formatDate(item.timestamp)}</span>
                             </div>
                         </div>
+                        <button class="btn-delete" onclick="requestDelete(${realIndex})" title="Delete">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </button>
                     </div>
                     <div class="item-actions">
                         <a href="${item.content}" download="${escapeHtml(item.name)}" class="btn-download">
